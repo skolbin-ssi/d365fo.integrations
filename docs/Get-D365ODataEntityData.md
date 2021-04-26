@@ -14,16 +14,26 @@ Get data from an Data Entity using OData
 
 ### Default (Default)
 ```
-Get-D365ODataEntityData -EntitySetName <String> [-ODataQuery <String>] [-CrossCompany] [-Tenant <String>]
- [-URL <String>] [-ClientId <String>] [-ClientSecret <String>] [-EnableException] [-RawOutput] [-OutputAsJson]
- [<CommonParameters>]
+Get-D365ODataEntityData -EntitySetName <String> [-Top <Int32>] [-Filter <String[]>] [-Select <String[]>]
+ [-Expand <String[]>] [-ODataQuery <String>] [-CrossCompany] [-Tenant <String>] [-Url <String>]
+ [-SystemUrl <String>] [-ClientId <String>] [-ClientSecret <String>] [-Token <String>] [-EnableException]
+ [-RawOutput] [-OutputAsJson] [<CommonParameters>]
+```
+
+### NextLink
+```
+Get-D365ODataEntityData [-EntityName <String>] [-EntitySetName <String>] [-Top <Int32>] [-Filter <String[]>]
+ [-Select <String[]>] [-Expand <String[]>] [-ODataQuery <String>] [-CrossCompany] [-Tenant <String>]
+ [-Url <String>] [-SystemUrl <String>] [-ClientId <String>] [-ClientSecret <String>] [-TraverseNextLink]
+ [-Token <String>] [-EnableException] [-OutputAsJson] [<CommonParameters>]
 ```
 
 ### Specific
 ```
-Get-D365ODataEntityData -EntityName <String> [-ODataQuery <String>] [-CrossCompany] [-Tenant <String>]
- [-URL <String>] [-ClientId <String>] [-ClientSecret <String>] [-EnableException] [-RawOutput] [-OutputAsJson]
- [<CommonParameters>]
+Get-D365ODataEntityData -EntityName <String> [-Top <Int32>] [-Filter <String[]>] [-Select <String[]>]
+ [-Expand <String[]>] [-ODataQuery <String>] [-CrossCompany] [-Tenant <String>] [-Url <String>]
+ [-SystemUrl <String>] [-ClientId <String>] [-ClientSecret <String>] [-Token <String>] [-EnableException]
+ [-RawOutput] [-OutputAsJson] [<CommonParameters>]
 ```
 
 ## DESCRIPTION
@@ -67,6 +77,31 @@ It will search the customers inside the "Comp1" legal entity / company.
 
 It will use the default OData configuration details that are stored in the configuration store.
 
+### EXAMPLE 4
+```
+Get-D365ODataEntityData -EntityName CustomersV3 -TraverseNextLink
+```
+
+This will get Customers from the OData endpoint.
+It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
+It will traverse all NextLink that will occur while fetching data from the OData endpoint.
+
+It will use the default OData configuration details that are stored in the configuration store.
+
+### EXAMPLE 5
+```
+$token = Get-D365ODataToken
+```
+
+PS C:\\\> Get-D365ODataEntityData -EntityName CustomersV3 -ODataQuery '$top=1' -Token $token
+
+This will get Customers from the OData endpoint.
+It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
+It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
+It will get the top 1 results from the list of customers.
+
+It will use the default OData configuration details that are stored in the configuration store.
+
 ## PARAMETERS
 
 ### -EntityName
@@ -80,6 +115,18 @@ E.g.
 The version 3 of the customers Data Entity is named CustomerV3, but can only be retrieving using CustomersV3
 
 Look at the Get-D365ODataPublicEntity cmdlet to help you obtain the correct name
+
+```yaml
+Type: String
+Parameter Sets: NextLink
+Aliases: Name
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
 
 ```yaml
 Type: String
@@ -107,6 +154,88 @@ Required: True
 Position: Named
 Default value: None
 Accept pipeline input: True (ByPropertyName)
+Accept wildcard characters: False
+```
+
+```yaml
+Type: String
+Parameter Sets: NextLink
+Aliases: CollectionName
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: True (ByPropertyName)
+Accept wildcard characters: False
+```
+
+### -Top
+Number of records that you want returned from the OData endpoint
+
+Setting this will override anything in the OData parameter
+
+```yaml
+Type: Int32
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: 0
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -Filter
+Filter statements to limit the records outputted from the OData endpoint
+
+Supports an array of filter statements, so you don't need to know the syntax of combining filter statements
+
+Setting this will override anything in the OData parameter
+
+```yaml
+Type: String[]
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -Select
+List of properties/columns that you want to return for the records outputted from the OData endpoint
+
+Setting this will override anything in the OData parameter
+
+```yaml
+Type: String[]
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -Expand
+List of navigation properties/related properties that you want to include for the records outputted from the OData endpoint
+
+Setting this will override anything in the OData parameter
+
+```yaml
+Type: String[]
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
@@ -156,7 +285,7 @@ Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is con
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: $AADGuid
+Aliases: $AadGuid
 
 Required: False
 Position: Named
@@ -165,17 +294,40 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -URL
+### -Url
 URL / URI for the D365FO environment you want to access through OData
+
+If you are working against a D365FO instance, it will be the URL / URI for the instance itself
+
+If you are working against a D365 Talent / HR instance, this will have to be "http://hr.talent.dynamics.com"
 
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: URI
+Aliases: Uri
 
 Required: False
 Position: Named
 Default value: $Script:ODataUrl
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -SystemUrl
+URL / URI for the D365FO instance where the OData endpoint is available
+
+If you are working against a D365FO instance, it will be the URL / URI for the instance itself, which is the same as the Url parameter value
+
+If you are working against a D365 Talent / HR instance, this will to be full instance URL / URI like "https://aos-rts-sf-b1b468164ee-prod-northeurope.hr.talent.dynamics.com/namespaces/0ab49d18-6325-4597-97b3-c7f2321aa80c"
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: $Script:ODataSystemUrl
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
@@ -210,6 +362,40 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
+### -TraverseNextLink
+Instruct the cmdlet to keep traversing the NextLink if the result set from the OData endpoint is larger than what one round trip can handle
+
+The system default is 10,000 (10 thousands) at the time of writing this feature in December 2020
+
+```yaml
+Type: SwitchParameter
+Parameter Sets: NextLink
+Aliases:
+
+Required: True
+Position: Named
+Default value: False
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -Token
+Pass a bearer token string that you want to use for while working against the endpoint
+
+This can improve performance if you are iterating over a large collection/array
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
 ### -EnableException
 This parameters disables user-friendly warnings and enables the throwing of exceptions
 This is less user friendly, but allows catching exceptions in calling scripts
@@ -233,7 +419,7 @@ The output will still be a PSCustomObject
 
 ```yaml
 Type: SwitchParameter
-Parameter Sets: (All)
+Parameter Sets: Default, Specific
 Aliases:
 
 Required: False

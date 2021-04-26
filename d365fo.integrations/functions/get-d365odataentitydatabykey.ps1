@@ -44,11 +44,27 @@
     .PARAMETER Url
         URL / URI for the D365FO environment you want to access through OData
         
+        If you are working against a D365FO instance, it will be the URL / URI for the instance itself
+        
+        If you are working against a D365 Talent / HR instance, this will have to be "http://hr.talent.dynamics.com"
+        
+    .PARAMETER SystemUrl
+        URL / URI for the D365FO instance where the OData endpoint is available
+        
+        If you are working against a D365FO instance, it will be the URL / URI for the instance itself, which is the same as the Url parameter value
+        
+        If you are working against a D365 Talent / HR instance, this will to be full instance URL / URI like "https://aos-rts-sf-b1b468164ee-prod-northeurope.hr.talent.dynamics.com/namespaces/0ab49d18-6325-4597-97b3-c7f2321aa80c"
+        
     .PARAMETER ClientId
         The ClientId obtained from the Azure Portal when you created a Registered Application
         
     .PARAMETER ClientSecret
         The ClientSecret obtained from the Azure Portal when you created a Registered Application
+        
+    .PARAMETER Token
+        Pass a bearer token string that you want to use for while working against the endpoint
+        
+        This can improve performance if you are iterating over a large collection/array
         
     .PARAMETER EnableException
         This parameters disables user-friendly warnings and enables the throwing of exceptions
@@ -74,6 +90,18 @@
         It will use the "CustomerV3" entity, and its EntitySetName / CollectionName "CustomersV3".
         It will use the "dataAreaId='DAT',CustomerAccount='123456789'" as key to identify the unique Customer record.
         It will make sure to search across all legal entities / companies inside the D365FO environment.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
+    .EXAMPLE
+        PS C:\> $token = Get-D365ODataToken
+        PS C:\> Get-D365ODataEntityDataByKey -EntityName CustomersV3 -Key "dataAreaId='DAT',CustomerAccount='123456789'" -Token $token
+        
+        This will get the specific Customer from the OData endpoint.
+        It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
+        It will use the "CustomerV3" entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will use the "dataAreaId='DAT',CustomerAccount='123456789'" as key to identify the unique Customer record.
+        It will NOT look across companies.
         
         It will use the default OData configuration details that are stored in the configuration store.
         
@@ -114,43 +142,68 @@ function Get-D365ODataEntityDataByKey {
         [Parameter(Mandatory = $true, ParameterSetName = "Specific")]
         [string] $Key,
 
-        [Parameter(Mandatory = $false)]
         [string] $ODataQuery,
 
-        [Parameter(Mandatory = $false)]
         [switch] $CrossCompany,
 
-        [Parameter(Mandatory = $false)]
-        [Alias('$AADGuid')]
+        [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
 
-        [Parameter(Mandatory = $false)]
-        [Alias('URI')]
-        [string] $URL = $Script:ODataUrl,
+        [Alias('Uri')]
+        [string] $Url = $Script:ODataUrl,
 
-        [Parameter(Mandatory = $false)]
+        [string] $SystemUrl = $Script:ODataSystemUrl,
+
         [string] $ClientId = $Script:ODataClientId,
 
-        [Parameter(Mandatory = $false)]
         [string] $ClientSecret = $Script:ODataClientSecret,
 
+        [string] $Token,
+        
         [switch] $EnableException,
 
         [switch] $OutputAsJson
     )
 
     begin {
-        $bearerParms = @{
-            Url          = $Url
-            ClientId     = $ClientId
-            ClientSecret = $ClientSecret
-            Tenant       = $Tenant
+        if ([System.String]::IsNullOrEmpty($SystemUrl)) {
+            Write-PSFMessage -Level Verbose -Message "The SystemUrl parameter was empty, using the Url parameter as the OData endpoint base address." -Target $SystemUrl
+            $SystemUrl = $Url
         }
 
-        $bearer = New-BearerToken @bearerParms
+        if ([System.String]::IsNullOrEmpty($Url) -or [System.String]::IsNullOrEmpty($SystemUrl)) {
+            $messageString = "It seems that you didn't supply a valid value for the Url parameter. You need specify the Url parameter or add a configuration with the <c='em'>Add-D365ODataConfig</c> cmdlet."
+            Write-PSFMessage -Level Host -Message $messageString -Exception $PSItem.Exception -Target $entityName
+            Stop-PSFFunction -Message "Stopping because of errors." -Exception $([System.Exception]::new($($messageString -replace '<[^>]+>', ''))) -ErrorRecord $_
+            return
+        }
+        
+        if ($Url.Substring($Url.Length - 1) -eq "/") {
+            Write-PSFMessage -Level Verbose -Message "The Url parameter had a tailing slash, which shouldn't be there. Removing the tailling slash." -Target $Url
+            $Url = $Url.Substring(0, $Url.Length - 1)
+        }
+    
+        if ($SystemUrl.Substring($SystemUrl.Length - 1) -eq "/") {
+            Write-PSFMessage -Level Verbose -Message "The SystemUrl parameter had a tailing slash, which shouldn't be there. Removing the tailling slash." -Target $Url
+            $SystemUrl = $SystemUrl.Substring(0, $SystemUrl.Length - 1)
+        }
+        
+        if (-not $Token) {
+            $bearerParms = @{
+                Url          = $Url
+                ClientId     = $ClientId
+                ClientSecret = $ClientSecret
+                Tenant       = $Tenant
+            }
 
+            $bearer = New-BearerToken @bearerParms
+        }
+        else {
+            $bearer = $Token
+        }
+        
         $headerParms = @{
-            URL         = $URL
+            URL         = $Url
             BearerToken = $bearer
         }
 
@@ -158,13 +211,20 @@ function Get-D365ODataEntityDataByKey {
     }
 
     process {
+        if (Test-PSFFunctionInterrupt) { return }
+
         Invoke-TimeSignal -Start
 
         Write-PSFMessage -Level Verbose -Message "Building request for the OData endpoint for entity: $entity." -Target $entity
 
-        [System.UriBuilder] $odataEndpoint = $URL
+        [System.UriBuilder] $odataEndpoint = $SystemUrl
         
-        $odataEndpoint.Path = "data/$EntityName($Key)"
+        if ($odataEndpoint.Path -eq "/") {
+            $odataEndpoint.Path = "data/$EntityName($Key)"
+        }
+        else {
+            $odataEndpoint.Path += "/data/$EntityName($Key)"
+        }
 
         if (-not ([string]::IsNullOrEmpty($ODataQuery))) {
             $odataEndpoint.Query = "$ODataQuery"
@@ -185,14 +245,13 @@ function Get-D365ODataEntityDataByKey {
                 $res
             }
         }
-        catch [System.Net.WebException]
-        {
+        catch [System.Net.WebException] {
             $webException = $_.Exception
             
-            if(($webException.Status -eq [System.Net.WebExceptionStatus]::ProtocolError) -and (-not($null -eq $webException.Response))) {
+            if (($webException.Status -eq [System.Net.WebExceptionStatus]::ProtocolError) -and (-not($null -eq $webException.Response))) {
                 $resp = [System.Net.HttpWebResponse]$webException.Response
 
-                if($resp.StatusCode -eq [System.Net.HttpStatusCode]::NotFound){
+                if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::NotFound) {
                     $messageString = "It seems that the OData endpoint was unable to locate the desired entity: $EntityName, based on the key: <c='em'>$key</c>. Please make sure that the key is <c='em'>valid</c> or try using the <c='em'>-CrossCompany</c> parameter."
                     Write-PSFMessage -Level Host -Message $messageString -Exception $PSItem.Exception -Target $EntityName
                     Stop-PSFFunction -Message "Stopping because of HTTP error 404." -Exception $([System.Exception]::new($($messageString -replace '<[^>]+>', ''))) -ErrorRecord $_

@@ -76,9 +76,22 @@
 			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipelineByPropertyName | Should -Be $False
 			$parameter.ParameterSets['__AllParameterSets'].ValueFromRemainingArguments | Should -Be $False
 		}
-		It 'Should have the expected parameter URL' {
-			$parameter = (Get-Command Get-D365ODataEntityDataByKey).Parameters['URL']
-			$parameter.Name | Should -Be 'URL'
+		It 'Should have the expected parameter Url' {
+			$parameter = (Get-Command Get-D365ODataEntityDataByKey).Parameters['Url']
+			$parameter.Name | Should -Be 'Url'
+			$parameter.ParameterType.ToString() | Should -Be System.String
+			$parameter.IsDynamic | Should -Be $False
+			$parameter.ParameterSets.Keys | Should -Be '__AllParameterSets'
+			$parameter.ParameterSets.Keys | Should -Contain '__AllParameterSets'
+			$parameter.ParameterSets['__AllParameterSets'].IsMandatory | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].Position | Should -Be -2147483648
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipeline | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipelineByPropertyName | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromRemainingArguments | Should -Be $False
+		}
+		It 'Should have the expected parameter SystemUrl' {
+			$parameter = (Get-Command Get-D365ODataEntityDataByKey).Parameters['SystemUrl']
+			$parameter.Name | Should -Be 'SystemUrl'
 			$parameter.ParameterType.ToString() | Should -Be System.String
 			$parameter.IsDynamic | Should -Be $False
 			$parameter.ParameterSets.Keys | Should -Be '__AllParameterSets'
@@ -105,6 +118,19 @@
 		It 'Should have the expected parameter ClientSecret' {
 			$parameter = (Get-Command Get-D365ODataEntityDataByKey).Parameters['ClientSecret']
 			$parameter.Name | Should -Be 'ClientSecret'
+			$parameter.ParameterType.ToString() | Should -Be System.String
+			$parameter.IsDynamic | Should -Be $False
+			$parameter.ParameterSets.Keys | Should -Be '__AllParameterSets'
+			$parameter.ParameterSets.Keys | Should -Contain '__AllParameterSets'
+			$parameter.ParameterSets['__AllParameterSets'].IsMandatory | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].Position | Should -Be -2147483648
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipeline | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipelineByPropertyName | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromRemainingArguments | Should -Be $False
+		}
+		It 'Should have the expected parameter Token' {
+			$parameter = (Get-Command Get-D365ODataEntityDataByKey).Parameters['Token']
+			$parameter.Name | Should -Be 'Token'
 			$parameter.ParameterType.ToString() | Should -Be System.String
 			$parameter.IsDynamic | Should -Be $False
 			$parameter.ParameterSets.Keys | Should -Be '__AllParameterSets'
@@ -146,13 +172,13 @@
 	Describe "Testing parameterset Default" {
 		<#
 		Default -
-		Default -ODataQuery -CrossCompany -Tenant -URL -ClientId -ClientSecret -EnableException -OutputAsJson
+		Default -ODataQuery -CrossCompany -Tenant -Url -SystemUrl -ClientId -ClientSecret -Token -EnableException -OutputAsJson
 		#>
 	}
  	Describe "Testing parameterset Specific" {
 		<#
 		Specific -EntityName -Key
-		Specific -EntityName -Key -ODataQuery -CrossCompany -Tenant -URL -ClientId -ClientSecret -EnableException -OutputAsJson
+		Specific -EntityName -Key -ODataQuery -CrossCompany -Tenant -Url -SystemUrl -ClientId -ClientSecret -Token -EnableException -OutputAsJson
 		#>
 	}
 

@@ -14,7 +14,8 @@ Invoke a REST Endpoint in Dynamics 365 Finance & Operations
 
 ```
 Invoke-D365RestEndpoint [-ServiceName] <String> [[-Payload] <String>] [[-Tenant] <String>] [[-URL] <String>]
- [[-ClientId] <String>] [[-ClientSecret] <String>] [-EnableException] [<CommonParameters>]
+ [[-ClientId] <String>] [[-ClientSecret] <String>] [[-Token] <String>] [-EnableException]
+ [[-TimeoutSec] <Int32>] [<CommonParameters>]
 ```
 
 ## DESCRIPTION
@@ -44,6 +45,18 @@ This will invoke the REST endpoint in the  Dynamics 365 Finance & Operations env
 First the desired json data is put into the $Payload variable.
 The ServiceName used for the import is "UserSessionService/AifUserSessionService/GetUserSessionInfo".
 The $Payload variable is passed to the cmdlet.
+
+### EXAMPLE 3
+```
+$token = Get-D365ODataToken
+```
+
+PS C:\\\> Invoke-D365RestEndpoint -ServiceName "UserSessionService/AifUserSessionService/GetUserSessionInfo" -Payload "{"RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}" -Token $token
+
+This will invoke the REST endpoint in the  Dynamics 365 Finance & Operations environment.
+It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
+The ServiceName used for the import is "UserSessionService/AifUserSessionService/GetUserSessionInfo".
+The Payload is a valid json string, containing all the needed properties.
 
 ## PARAMETERS
 
@@ -149,6 +162,23 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
+### -Token
+Pass a bearer token string that you want to use for while working against the endpoint
+
+This can improve performance if you are iterating over a large collection/array
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 7
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
 ### -EnableException
 This parameters disables user-friendly warnings and enables the throwing of exceptions
 This is less user friendly, but allows catching exceptions in calling scripts
@@ -161,6 +191,25 @@ Aliases:
 Required: False
 Position: Named
 Default value: False
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -TimeoutSec
+Specifies how long the request can be pending before it times out.
+Enter a value in seconds.
+The default value, 0, specifies an indefinite time-out.
+A Domain Name System (DNS) query can take up to 15 seconds to return or time out.
+If your request contains a host name that requires resolution, and you set TimeoutSec to a value greater than zero, but less than 15 seconds, it can take 15 seconds or more before a WebException is thrown, and your request times out.
+
+```yaml
+Type: Int32
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 8
+Default value: 0
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

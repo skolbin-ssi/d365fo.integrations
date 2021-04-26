@@ -9,7 +9,7 @@
         Useful when the module is used in an automated fashion, like inside Azure DevOps pipelines and large PowerShell scripts
         
     .EXAMPLE
-        PS C:\>Enable-D365Exception
+        PS C:\>Enable-D365ExceptionIntegrations
         
         This will for the rest of the current PowerShell session make sure that exceptions will be thrown.
         
@@ -19,11 +19,14 @@
         Author: Mötz Jensen (@Splaxi)
 #>
 
-function Enable-D365Exception {
+function Enable-D365ExceptionIntegrations {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute("PSUseSingularNouns", "")]
     [CmdletBinding()]
     param ()
 
     Write-PSFMessage -Level Verbose -Message "Enabling exception across the entire module." -Target $configurationValue
+    Set-PSFFeature -Name 'PSFramework.InheritEnableException' -Value $true -ModuleName "d365fo.integrations"
+    Set-PSFFeature -Name 'PSFramework.InheritEnableException' -Value $true -ModuleName "PSOAuthHelper"
 
     $PSDefaultParameterValues['*:EnableException'] = $true
 }

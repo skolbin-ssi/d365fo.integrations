@@ -13,8 +13,9 @@ Import a Data Entity into Dynamics 365 Finance & Operations
 ## SYNTAX
 
 ```
-Import-D365ODataEntity [-EntityName] <String> [-Payload] <String> [-CrossCompany] [[-Tenant] <String>]
- [[-URL] <String>] [[-ClientId] <String>] [[-ClientSecret] <String>] [-EnableException] [<CommonParameters>]
+Import-D365ODataEntity [-EntityName] <String> [-Payload] <String> [[-PayloadCharset] <String>] [-CrossCompany]
+ [[-Tenant] <String>] [[-Url] <String>] [[-SystemUrl] <String>] [[-ClientId] <String>]
+ [[-ClientSecret] <String>] [[-Token] <String>] [-EnableException] [<CommonParameters>]
 ```
 
 ## DESCRIPTION
@@ -42,6 +43,18 @@ This will import a Data Entity into Dynamics 365 Finance & Operations using the 
 First the desired json data is put into the $Payload variable.
 The EntityName used for the import is ExchangeRates.
 The $Payload variable is passed to the cmdlet.
+
+### EXAMPLE 3
+```
+$token = Get-D365ODataToken
+```
+
+PS C:\\\> Import-D365ODataEntity -EntityName "ExchangeRates" -Payload '{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}' -Token $token
+
+This will import a Data Entity into Dynamics 365 Finance & Operations using the OData endpoint.
+It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
+The EntityName used for the import is ExchangeRates.
+The Payload is a valid json string, containing all the needed properties.
 
 ## PARAMETERS
 
@@ -86,6 +99,25 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
+### -PayloadCharset
+The charset / encoding that you want the cmdlet to use while importing the odata entity
+
+The default value is: "UTF8"
+
+The charset has to be a valid http charset like: ASCII, ANSI, ISO-8859-1, UTF-8
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 3
+Default value: UTF-8
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
 ### -CrossCompany
 Instruct the cmdlet / function to ensure the request against the OData endpoint will work across all companies
 
@@ -107,26 +139,49 @@ Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is con
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: $AADGuid
+Aliases: $AadGuid
 
 Required: False
-Position: 3
+Position: 4
 Default value: $Script:ODataTenant
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -URL
+### -Url
 URL / URI for the D365FO environment you want to access through OData
+
+If you are working against a D365FO instance, it will be the URL / URI for the instance itself
+
+If you are working against a D365 Talent / HR instance, this will have to be "http://hr.talent.dynamics.com"
 
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: URI
+Aliases: Uri
 
 Required: False
-Position: 4
+Position: 5
 Default value: $Script:ODataUrl
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -SystemUrl
+URL / URI for the D365FO instance where the OData endpoint is available
+
+If you are working against a D365FO instance, it will be the URL / URI for the instance itself, which is the same as the Url parameter value
+
+If you are working against a D365 Talent / HR instance, this will to be full instance URL / URI like "https://aos-rts-sf-b1b468164ee-prod-northeurope.hr.talent.dynamics.com/namespaces/0ab49d18-6325-4597-97b3-c7f2321aa80c"
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 6
+Default value: $Script:ODataSystemUrl
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
@@ -140,7 +195,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: False
-Position: 5
+Position: 7
 Default value: $Script:ODataClientId
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -155,8 +210,25 @@ Parameter Sets: (All)
 Aliases:
 
 Required: False
-Position: 6
+Position: 8
 Default value: $Script:ODataClientSecret
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -Token
+Pass a bearer token string that you want to use for while working against the endpoint
+
+This can improve performance if you are iterating over a large collection/array
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 9
+Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

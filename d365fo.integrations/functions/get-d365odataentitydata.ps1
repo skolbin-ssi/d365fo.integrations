@@ -22,6 +22,28 @@
         
         The parameter is created specifically to be used when piping from Get-D365ODataPublicEntity
         
+    .PARAMETER Top
+        Number of records that you want returned from the OData endpoint
+        
+        Setting this will override anything in the OData parameter
+        
+    .PARAMETER Filter
+        Filter statements to limit the records outputted from the OData endpoint
+        
+        Supports an array of filter statements, so you don't need to know the syntax of combining filter statements
+        
+        Setting this will override anything in the OData parameter
+        
+    .PARAMETER Select
+        List of properties/columns that you want to return for the records outputted from the OData endpoint
+        
+        Setting this will override anything in the OData parameter
+        
+    .PARAMETER Expand
+        List of navigation properties/related properties that you want to include for the records outputted from the OData endpoint
+        
+        Setting this will override anything in the OData parameter
+        
     .PARAMETER ODataQuery
         Valid OData query string that you want to pass onto the D365 OData endpoint while retrieving data
         
@@ -44,11 +66,32 @@
     .PARAMETER Url
         URL / URI for the D365FO environment you want to access through OData
         
+        If you are working against a D365FO instance, it will be the URL / URI for the instance itself
+        
+        If you are working against a D365 Talent / HR instance, this will have to be "http://hr.talent.dynamics.com"
+        
+    .PARAMETER SystemUrl
+        URL / URI for the D365FO instance where the OData endpoint is available
+        
+        If you are working against a D365FO instance, it will be the URL / URI for the instance itself, which is the same as the Url parameter value
+        
+        If you are working against a D365 Talent / HR instance, this will to be full instance URL / URI like "https://aos-rts-sf-b1b468164ee-prod-northeurope.hr.talent.dynamics.com/namespaces/0ab49d18-6325-4597-97b3-c7f2321aa80c"
+        
     .PARAMETER ClientId
         The ClientId obtained from the Azure Portal when you created a Registered Application
         
     .PARAMETER ClientSecret
         The ClientSecret obtained from the Azure Portal when you created a Registered Application
+        
+    .PARAMETER TraverseNextLink
+        Instruct the cmdlet to keep traversing the NextLink if the result set from the OData endpoint is larger than what one round trip can handle
+        
+        The system default is 10,000 (10 thousands) at the time of writing this feature in December 2020
+        
+    .PARAMETER Token
+        Pass a bearer token string that you want to use for while working against the endpoint
+        
+        This can improve performance if you are iterating over a large collection/array
         
     .PARAMETER EnableException
         This parameters disables user-friendly warnings and enables the throwing of exceptions
@@ -92,6 +135,26 @@
         
         It will use the default OData configuration details that are stored in the configuration store.
         
+    .EXAMPLE
+        PS C:\> Get-D365ODataEntityData -EntityName CustomersV3 -TraverseNextLink
+        
+        This will get Customers from the OData endpoint.
+        It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will traverse all NextLink that will occur while fetching data from the OData endpoint.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
+    .EXAMPLE
+        PS C:\> $token = Get-D365ODataToken
+        PS C:\> Get-D365ODataEntityData -EntityName CustomersV3 -ODataQuery '$top=1' -Token $token
+        
+        This will get Customers from the OData endpoint.
+        It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
+        It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will get the top 1 results from the list of customers.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
     .LINK
         Add-D365ODataConfig
         
@@ -123,35 +186,48 @@ function Get-D365ODataEntityData {
     [OutputType()]
     param (
         [Parameter(Mandatory = $true, ParameterSetName = "Specific")]
+        [Parameter(ParameterSetName = "NextLink")]
         [Alias('Name')]
         [string] $EntityName,
 
         [Parameter(Mandatory = $true, ParameterSetName = "Default", ValueFromPipelineByPropertyName = $true)]
+        [Parameter(ParameterSetName = "NextLink", ValueFromPipelineByPropertyName = $true)]
         [Alias('CollectionName')]
         [string] $EntitySetName,
 
-        [Parameter(Mandatory = $false)]
+        [int] $Top,
+
+        [string[]] $Filter,
+
+        [string[]] $Select,
+
+        [string[]] $Expand,
+
         [string] $ODataQuery,
 
-        [Parameter(Mandatory = $false)]
         [switch] $CrossCompany,
 
-        [Parameter(Mandatory = $false)]
-        [Alias('$AADGuid')]
+        [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
 
-        [Parameter(Mandatory = $false)]
-        [Alias('URI')]
-        [string] $URL = $Script:ODataUrl,
+        [Alias('Uri')]
+        [string] $Url = $Script:ODataUrl,
 
-        [Parameter(Mandatory = $false)]
+        [string] $SystemUrl = $Script:ODataSystemUrl,
+
         [string] $ClientId = $Script:ODataClientId,
 
-        [Parameter(Mandatory = $false)]
         [string] $ClientSecret = $Script:ODataClientSecret,
 
+        [Parameter(Mandatory = $true, ParameterSetName = "NextLink")]
+        [switch] $TraverseNextLink,
+
+        [string] $Token,
+        
         [switch] $EnableException,
 
+        [Parameter(ParameterSetName = "Specific")]
+        [Parameter(ParameterSetName = "Default")]
         [switch] $RawOutput,
 
         [switch] $OutputAsJson
@@ -159,24 +235,88 @@ function Get-D365ODataEntityData {
     )
 
     begin {
-        $bearerParms = @{
-            Url          = $Url
-            ClientId     = $ClientId
-            ClientSecret = $ClientSecret
-            Tenant       = $Tenant
+        if ([System.String]::IsNullOrEmpty($SystemUrl)) {
+            Write-PSFMessage -Level Verbose -Message "The SystemUrl parameter was empty, using the Url parameter as the OData endpoint base address." -Target $SystemUrl
+            $SystemUrl = $Url
+        }
+        
+        if ([System.String]::IsNullOrEmpty($Url) -or [System.String]::IsNullOrEmpty($SystemUrl)) {
+            $messageString = "It seems that you didn't supply a valid value for the Url parameter. You need specify the Url parameter or add a configuration with the <c='em'>Add-D365ODataConfig</c> cmdlet."
+            Write-PSFMessage -Level Host -Message $messageString -Exception $PSItem.Exception -Target $entityName
+            Stop-PSFFunction -Message "Stopping because of errors." -Exception $([System.Exception]::new($($messageString -replace '<[^>]+>', ''))) -ErrorRecord $_
+            return
+        }
+        
+        if ($Url.Substring($Url.Length - 1) -eq "/") {
+            Write-PSFMessage -Level Verbose -Message "The Url parameter had a tailing slash, which shouldn't be there. Removing the tailling slash." -Target $Url
+            $Url = $Url.Substring(0, $Url.Length - 1)
+        }
+    
+        if ($SystemUrl.Substring($SystemUrl.Length - 1) -eq "/") {
+            Write-PSFMessage -Level Verbose -Message "The SystemUrl parameter had a tailing slash, which shouldn't be there. Removing the tailling slash." -Target $Url
+            $SystemUrl = $SystemUrl.Substring(0, $SystemUrl.Length - 1)
         }
 
-        $bearer = New-BearerToken @bearerParms
+        if (-not $Token) {
+            $bearerParms = @{
+                Url          = $Url
+                ClientId     = $ClientId
+                ClientSecret = $ClientSecret
+                Tenant       = $Tenant
+            }
 
+            $bearer = New-BearerToken @bearerParms
+        }
+        else {
+            $bearer = $Token
+        }
+        
         $headerParms = @{
-            URL         = $URL
+            URL         = $Url
             BearerToken = $bearer
         }
 
         $headers = New-AuthorizationHeaderBearerToken @headerParms
+
+        $odataAppend = "&"
+
+        $sbODataQuery = [System.Text.StringBuilder]::new()
+        if ($Top -gt 0) {
+            [void]$sbODataQuery.AppendFormat("`$top={0}", $top)
+        }
+
+        if (-not [System.String]::IsNullOrEmpty($Filter)) {
+            if ($sbODataQuery.Length -gt 0) {
+                $odataFilterAppend = $odataAppend
+            }
+
+            [void]$sbODataQuery.AppendFormat("{0}`$filter={1}", $odataFilterAppend, $($Filter -join " and "))
+        }
+        
+        if (-not [System.String]::IsNullOrEmpty($Select)) {
+            if ($sbODataQuery.Length -gt 0) {
+                $odataSelectAppend = $odataAppend
+            }
+
+            [void]$sbODataQuery.AppendFormat("{0}`$select={1}", $odataSelectAppend, $($Select -join ","))
+        }
+
+        if (-not [System.String]::IsNullOrEmpty($Expand)) {
+            if ($sbODataQuery.Length -gt 0) {
+                $odataExpandAppend = $odataAppend
+            }
+
+            [void]$sbODataQuery.AppendFormat("{0}`$expand={1}", $odataExpandAppend, $($Expand -join ","))
+        }
+
+        if ($sbODataQuery.Length -gt 0) {
+            $ODataQuery = $sbODataQuery.ToString()
+        }
     }
 
     process {
+        if (Test-PSFFunctionInterrupt) { return }
+
         Invoke-TimeSignal -Start
 
         Write-PSFMessage -Level Verbose -Message "Building request for the OData endpoint for entity: $entity." -Target $entity
@@ -184,9 +324,14 @@ function Get-D365ODataEntityData {
         #A simple hack to select either names as the name going forward
         $entity = "$EntityName$EntitySetName"
 
-        [System.UriBuilder] $odataEndpoint = $URL
+        [System.UriBuilder] $odataEndpoint = $SystemUrl
         
-        $odataEndpoint.Path = "data/$entity"
+        if ($odataEndpoint.Path -eq "/") {
+            $odataEndpoint.Path = "data/$entity"
+        }
+        else {
+            $odataEndpoint.Path += "/data/$entity"
+        }
 
         if (-not ([string]::IsNullOrEmpty($ODataQuery))) {
             $odataEndpoint.Query = "$ODataQuery"
@@ -197,11 +342,27 @@ function Get-D365ODataEntityData {
         }
 
         try {
-            Write-PSFMessage -Level Verbose -Message "Executing http request against the OData endpoint." -Target $($odataEndpoint.Uri.AbsoluteUri)
-            $res = Invoke-RestMethod -Method Get -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType 'application/json'
+            [System.Collections.Generic.List[System.Object]] $resArray = @()
 
-            if (-not $RawOutput) {
-                $res = $res.Value
+            $localUri = $odataEndpoint.Uri.AbsoluteUri
+            do {
+                Write-PSFMessage -Level Verbose -Message "Executing http request against the OData endpoint." -Target $localUri
+                $resGet = Invoke-RestMethod -Method Get -Uri $localUri -Headers $headers -ContentType 'application/json'
+
+                if (-not $RawOutput) {
+                    $resArray.AddRange($resGet.Value)
+                }
+                else {
+                    $res = $resGet
+                }
+                
+                if ($($resGet.'@odata.nextLink') -match ".*(/data/.*)") {
+                    $localUri = "$SystemUrl$($Matches[1])"
+                }
+            } while ($TraverseNextLink -and $resGet.'@odata.nextLink')
+
+            if ($resArray.Count -gt 0) {
+                $res = $resArray.ToArray()
             }
 
             if ($OutputAsJson) {

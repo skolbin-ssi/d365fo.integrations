@@ -33,6 +33,13 @@
     .PARAMETER Url
         URL / URI for the D365FO environment you want to access through OData
         
+    .PARAMETER SystemUrl
+        URL / URI for the D365FO instance where the OData endpoint is available
+        
+        If you are working against a D365FO instance, it will be the URL / URI for the instance itself, which is the same as the Url parameter value
+        
+        If you are working against a D365 Talent / HR instance, this will to be full instance URL / URI like "https://aos-rts-sf-b1b468164ee-prod-northeurope.hr.talent.dynamics.com/namespaces/0ab49d18-6325-4597-97b3-c7f2321aa80c"
+        
     .PARAMETER ClientId
         The ClientId obtained from the Azure Portal when you created a Registered Application
         
@@ -41,6 +48,11 @@
         
     .PARAMETER RawOutput
         Instructs the cmdlet to output the raw json string directly
+        
+    .PARAMETER Token
+        Pass a bearer token string that you want to use for while working against the endpoint
+        
+        This can improve performance if you are iterating over a large collection/array
         
     .PARAMETER EnableException
         This parameters disables user-friendly warnings and enables the throwing of exceptions
@@ -62,6 +74,15 @@
         The EntityName used for the import is ExchangeRates.
         The $Payload variable is passed to the cmdlet.
         
+    .EXAMPLE
+        PS C:\> $token = Get-D365ODataToken
+        PS C:\> Import-D365ODataEntityBatchMode -EntityName "ExchangeRates" -Payload '{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}','{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-04T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}' -Token $token
+        
+        This will import a set of Data Entities into Dynamics 365 Finance & Operations using the OData endpoint.
+        It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
+        The EntityName used for the import is ExchangeRates.
+        The Payload is an array containing valid json strings, each containing all the needed properties.
+        
     .NOTES
         Tags: OData, Data, Entity, Import, Upload
         
@@ -79,41 +100,67 @@ function Import-D365ODataEntityBatchMode {
         [Alias('Json')]
         [string[]] $Payload,
 
-        [Parameter(Mandatory = $false)]
         [switch] $CrossCompany,
 
-        [Parameter(Mandatory = $false)]
-        [Alias('$AADGuid')]
+        [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
 
-        [Parameter(Mandatory = $false)]
-        [Alias('URI')]
-        [string] $URL = $Script:ODataUrl,
+        [Alias('Uri')]
+        [string] $Url = $Script:ODataUrl,
 
-        [Parameter(Mandatory = $false)]
+        [string] $SystemUrl = $Script:ODataSystemUrl,
+
         [string] $ClientId = $Script:ODataClientId,
 
-        [Parameter(Mandatory = $false)]
         [string] $ClientSecret = $Script:ODataClientSecret,
 
         [switch] $RawOutput,
-
+        
+        [string] $Token,
+        
         [switch] $EnableException
 
     )
 
     begin {
-        $bearerParms = @{
-            Url          = $Url
-            ClientId     = $ClientId
-            ClientSecret = $ClientSecret
-            Tenant       = $Tenant
+        if ([System.String]::IsNullOrEmpty($SystemUrl)) {
+            Write-PSFMessage -Level Verbose -Message "The SystemUrl parameter was empty, using the Url parameter as the OData endpoint base address." -Target $SystemUrl
+            $SystemUrl = $Url
         }
+        
+        if ([System.String]::IsNullOrEmpty($Url) -or [System.String]::IsNullOrEmpty($SystemUrl)) {
+            $messageString = "It seems that you didn't supply a valid value for the Url parameter. You need specify the Url parameter or add a configuration with the <c='em'>Add-D365ODataConfig</c> cmdlet."
+            Write-PSFMessage -Level Host -Message $messageString -Exception $PSItem.Exception -Target $entityName
+            Stop-PSFFunction -Message "Stopping because of errors." -Exception $([System.Exception]::new($($messageString -replace '<[^>]+>', ''))) -ErrorRecord $_
+            return
+        }
+        
+        if ($Url.Substring($Url.Length - 1) -eq "/") {
+            Write-PSFMessage -Level Verbose -Message "The Url parameter had a tailing slash, which shouldn't be there. Removing the tailling slash." -Target $Url
+            $Url = $Url.Substring(0, $Url.Length - 1)
+        }
+    
+        if ($SystemUrl.Substring($SystemUrl.Length - 1) -eq "/") {
+            Write-PSFMessage -Level Verbose -Message "The SystemUrl parameter had a tailing slash, which shouldn't be there. Removing the tailling slash." -Target $Url
+            $SystemUrl = $SystemUrl.Substring(0, $SystemUrl.Length - 1)
+        }
+        
+        if (-not $Token) {
+            $bearerParms = @{
+                Url          = $Url
+                ClientId     = $ClientId
+                ClientSecret = $ClientSecret
+                Tenant       = $Tenant
+            }
 
-        $bearer = New-BearerToken @bearerParms
-
+            $bearer = New-BearerToken @bearerParms
+        }
+        else {
+            $bearer = $Token
+        }
+        
         $headerParms = @{
-            URL         = $URL
+            URL         = $Url
             BearerToken = $bearer
         }
 
@@ -131,19 +178,19 @@ function Import-D365ODataEntityBatchMode {
         $idbatch = $(New-Guid).ToString()
         $idchangeset = $(New-Guid).ToString()
     
-        $batchPayload = "--batch_$idbatch"
-        $changesetPayload = "--changeset_$idchangeset"
+        $batchPayload = "batch_$idbatch"
+        $changesetPayload = "changeset_$idchangeset"
         
-        $request = [System.Net.WebRequest]::Create("$URL/data/`$batch")
+        $request = [System.Net.WebRequest]::Create("$SystemUrl/data/`$batch")
         $request.Headers["Authorization"] = $headers.Authorization
         $request.Method = "POST"
         $request.ContentType = "multipart/mixed; boundary=batch_$idBatch"
 
-        $dataBuilder.Clear()
+        $dataBuilder.Clear() > $null
 
-        $null = $dataBuilder.AppendLine("--$batchPayLoad ") #Space is important!
-        $null = $dataBuilder.AppendLine("Content-Type: multipart/mixed; boundary=changeset_$idchangeset {0}" -f [System.Environment]::NewLine)
-        $null = $dataBuilder.AppendLine("$changeSetPayLoad ") #Space is important!
+        $dataBuilder.AppendLine("--$batchPayLoad ") > $null #Space is important!
+        $dataBuilder.AppendLine("Content-Type: multipart/mixed; boundary=changeset_$idchangeset {0}" -f [System.Environment]::NewLine) > $null
+        $dataBuilder.AppendLine("--$changeSetPayLoad ") > $null #Space is important!
 
         $localEntity = $EntityName
         $payLoadEnumerator = $PayLoad.GetEnumerator()
@@ -155,17 +202,17 @@ function Import-D365ODataEntityBatchMode {
             $counter ++
             $localPayload = $payLoadEnumerator.Current.Trim()
 
-            $null = $dataBuilder.Append((New-BatchContent -Url "$URL/data/$localEntity" -AuthenticationToken $bearer -Payload $LocalPayload -Count $counter))
+            $dataBuilder.Append((New-BatchContent -Url "$SystemUrl/data/$localEntity" -Payload $LocalPayload -Count $counter)) > $null
 
             if ($PayLoad.Count -eq $counter) {
-                $null = $dataBuilder.AppendLine("$changesetPayload--")
+                $dataBuilder.AppendLine("--$changesetPayload--") > $null
             }
             else {
-                $null = $dataBuilder.AppendLine("$changesetPayload")
+                $dataBuilder.AppendLine("--$changesetPayload") > $null
             }
         }
     
-        $null = $dataBuilder.Append("$batchPayload--")
+        $dataBuilder.Append("--$batchPayload--") > $null
         $data = $dataBuilder.ToString()
 
         Write-PSFMessage -Level Debug -Message "Parsing data to debug log next."
@@ -204,7 +251,7 @@ function Import-D365ODataEntityBatchMode {
             $res
         }
         else {
-            
+            $res | ConvertTo-Json
         }
 
         Invoke-TimeSignal -End

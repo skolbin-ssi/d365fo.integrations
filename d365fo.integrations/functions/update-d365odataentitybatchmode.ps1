@@ -37,11 +37,25 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will work across all companies
         
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
     .PARAMETER Url
         URL / URI for the D365FO environment you want to access through OData
+        
+    .PARAMETER SystemUrl
+        URL / URI for the D365FO instance where the OData endpoint is available
+        
+        If you are working against a D365FO instance, it will be the URL / URI for the instance itself, which is the same as the Url parameter value
+        
+        If you are working against a D365 Talent / HR instance, this will to be full instance URL / URI like "https://aos-rts-sf-b1b468164ee-prod-northeurope.hr.talent.dynamics.com/namespaces/0ab49d18-6325-4597-97b3-c7f2321aa80c"
         
     .PARAMETER ClientId
         The ClientId obtained from the Azure Portal when you created a Registered Application
@@ -89,6 +103,20 @@
         
         It will use the default OData configuration details that are stored in the configuration store.
         
+    .EXAMPLE
+        PS C:\> $payload = '{"SalesTaxGroup":"DK"}'
+        PS C:\> $updates = @([PSCustomObject]@{Key = "dataAreaId='USMF',CustomerAccount='Customer1'"; Payload = $payload})
+        PS C:\> $updates += [PSCustomObject]@{Key = "dataAreaId='USMF',CustomerAccount='Customer2'"; Payload = $payload}
+        PS C:\> Update-D365ODataEntityBatchMode -EntityName "CustomersV3" -Payload $($updates.ToArray()) -ThrottleSeed 2
+        
+        This will update a set of Data Entities in Dynamics 365 Finance & Operations using the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        The payload that needs to be updated for all entities is saved in the $payload variable.
+        The desired customers that needs to be updated are saved into the $updates, with their unique key and the payload.
+        The $updates variable is passed to the cmdlet.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
     .NOTES
         Tags: OData, Data, Entity, Update, Upload, Batch
         
@@ -110,11 +138,15 @@ function Update-D365ODataEntityBatchMode {
 
         [switch] $CrossCompany,
 
+        [int] $ThrottleSeed,
+
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
 
         [Alias('Uri')]
         [string] $Url = $Script:ODataUrl,
+
+        [string] $SystemUrl = $Script:ODataSystemUrl,
 
         [string] $ClientId = $Script:ODataClientId,
 
@@ -187,7 +219,7 @@ function Update-D365ODataEntityBatchMode {
         $batchPayload = "batch_$idbatch"
         $changesetPayload = "changeset_$idchangeset"
         
-        $request = [System.Net.WebRequest]::Create("$URL/data/`$batch")
+        $request = [System.Net.WebRequest]::Create("$SystemUrl/data/`$batch")
         $request.Headers["Authorization"] = $headers.Authorization
         $request.Method = "POST"
         $request.ContentType = "multipart/mixed; boundary=batch_$idBatch"
@@ -210,7 +242,7 @@ function Update-D365ODataEntityBatchMode {
             $counter ++
             $localPayload = $payLoadEnumerator.Current.Payload.Trim()
 
-            $dataBuilder.Append((New-BatchContent -Url "$URL/data/$localEntity" -Payload $LocalPayload -Count $counter -Method "PATCH")) > $null
+            $dataBuilder.Append((New-BatchContent -Url "$SystemUrl/data/$localEntity" -Payload $LocalPayload -Count $counter -Method "PATCH")) > $null
 
             if ($PayLoad.Count -eq $counter) {
                 $dataBuilder.AppendLine("--$changesetPayload--") > $null
@@ -259,9 +291,13 @@ function Update-D365ODataEntityBatchMode {
             $res
         }
         else {
-            
+            $res | ConvertTo-Json
         }
 
+        if ($ThrottleSeed) {
+            Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
+        }
+        
         Invoke-TimeSignal -End
     }
 }

@@ -38,6 +38,30 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will search across all companies
         
+    .PARAMETER RetryTimeout
+        The retry timeout, before the cmdlet should quit retrying based on the 429 status code
+        
+        Needs to be provided in the timspan notation:
+        "hh:mm:ss"
+        
+        hh is the number of hours, numerical notation only
+        mm is the number of minutes
+        ss is the numbers of seconds
+        
+        Each section of the timeout has to valid, e.g.
+        hh can maximum be 23
+        mm can maximum be 59
+        ss can maximum be 59
+        
+        Not setting this parameter will result in the cmdlet to try for ever to handle the 429 push back from the endpoint
+        
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
@@ -105,6 +129,28 @@
         
         It will use the default OData configuration details that are stored in the configuration store.
         
+    .EXAMPLE
+        PS C:\> Get-D365ODataEntityDataByKey -EntityName CustomersV3 -Key "dataAreaId='DAT',CustomerAccount='123456789'" -RetryTimeout "00:01:00"
+        
+        This will get the specific Customer from the OData endpoint, and try for 1 minute to handle 429.
+        It will use the "CustomerV3" entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will use the "dataAreaId='DAT',CustomerAccount='123456789'" as key to identify the unique Customer record.
+        It will NOT look across companies.
+        It will only try to handle 429 retries for 1 minute, before failing.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
+    .EXAMPLE
+        PS C:\> Get-D365ODataEntityDataByKey -EntityName CustomersV3 -Key "dataAreaId='DAT',CustomerAccount='123456789'" -ThrottleSeed 2
+        
+        This will get the specific Customer from the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        It will use the "CustomerV3" entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will use the "dataAreaId='DAT',CustomerAccount='123456789'" as key to identify the unique Customer record.
+        It will NOT look across companies.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
     .LINK
         Add-D365ODataConfig
         
@@ -145,6 +191,10 @@ function Get-D365ODataEntityDataByKey {
         [string] $ODataQuery,
 
         [switch] $CrossCompany,
+
+        [Timespan] $RetryTimeout = "00:00:00",
+
+        [int] $ThrottleSeed,
 
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
@@ -236,7 +286,9 @@ function Get-D365ODataEntityDataByKey {
 
         try {
             Write-PSFMessage -Level Verbose -Message "Executing http request against the OData endpoint." -Target $($odataEndpoint.Uri.AbsoluteUri)
-            $res = Invoke-RestMethod -Method Get -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType 'application/json'
+            $res = Invoke-RequestHandler -Method Get -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType 'application/json' -RetryTimeout $RetryTimeout
+
+            if (Test-PSFFunctionInterrupt) { return }
 
             if ($OutputAsJson) {
                 $res | ConvertTo-Json -Depth 10
@@ -272,6 +324,10 @@ function Get-D365ODataEntityDataByKey {
             return
         }
 
+        if ($ThrottleSeed) {
+            Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
+        }
+        
         Invoke-TimeSignal -End
     }
 }

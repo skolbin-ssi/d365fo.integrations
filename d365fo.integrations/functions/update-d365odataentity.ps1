@@ -37,6 +37,30 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will search across all companies
         
+    .PARAMETER RetryTimeout
+        The retry timeout, before the cmdlet should quit retrying based on the 429 status code
+        
+        Needs to be provided in the timspan notation:
+        "hh:mm:ss"
+        
+        hh is the number of hours, numerical notation only
+        mm is the number of minutes
+        ss is the numbers of seconds
+        
+        Each section of the timeout has to valid, e.g.
+        hh can maximum be 23
+        mm can maximum be 59
+        ss can maximum be 59
+        
+        Not setting this parameter will result in the cmdlet to try for ever to handle the 429 push back from the endpoint
+        
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
@@ -106,6 +130,30 @@
         
         It will use the default OData configuration details that are stored in the configuration store.
         
+    .EXAMPLE
+        PS C:\> Update-D365ODataEntity -EntityName "CustomersV3" -Key "dataAreaId='DAT',CustomerAccount='123456789'" -Payload '{"NameAlias": "CustomerA"}' -CrossCompany -RetryTimeout "00:01:00"
+        
+        This will update a Data Entity in Dynamics 365 Finance & Operations using the OData endpoint, and try for 1 minute to handle 429.
+        The EntityName used for the update is "CustomersV3".
+        It will use the "dataAreaId='DAT',CustomerAccount='123456789'" as key to identify the unique Customer record.
+        The Payload is a valid json string, containing the needed properties that we want to update.
+        It will make sure to search across all legal entities / companies inside the D365FO environment.
+        It will only try to handle 429 retries for 1 minute, before failing.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
+    .EXAMPLE
+        PS C:\> Update-D365ODataEntity -EntityName "CustomersV3" -Key "dataAreaId='DAT',CustomerAccount='123456789'" -Payload '{"NameAlias": "CustomerA"}' -CrossCompany -ThrottleSeed 2
+        
+        This will update a Data Entity in Dynamics 365 Finance & Operations using the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        The EntityName used for the update is "CustomersV3".
+        It will use the "dataAreaId='DAT',CustomerAccount='123456789'" as key to identify the unique Customer record.
+        The Payload is a valid json string, containing the needed properties that we want to update.
+        It will make sure to search across all legal entities / companies inside the D365FO environment.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
     .NOTES
         Tags: OData, Data, Entity, Update, Upload
         
@@ -139,6 +187,10 @@ function Update-D365ODataEntity {
         [string] $PayloadCharset = "UTF-8",
 
         [switch] $CrossCompany,
+
+        [Timespan] $RetryTimeout = "00:00:00",
+
+        [int] $ThrottleSeed,
 
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
@@ -230,7 +282,9 @@ function Update-D365ODataEntity {
 
         try {
             Write-PSFMessage -Level Verbose -Message "Executing http request against the OData endpoint." -Target $($odataEndpoint.Uri.AbsoluteUri)
-            Invoke-RestMethod -Method Patch -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType "application/json;charset=$PayloadCharset" -Body $Payload
+            Invoke-RequestHandler -Method Patch -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType "application/json;charset=$PayloadCharset" -Payload $Payload -RetryTimeout $RetryTimeout
+        
+            if (Test-PSFFunctionInterrupt) { return }
         }
         catch [System.Net.WebException] {
             $webException = $_.Exception
@@ -257,6 +311,10 @@ function Update-D365ODataEntity {
             Write-PSFMessage -Level Host -Message $messageString -Exception $PSItem.Exception -Target $EntityName
             Stop-PSFFunction -Message "Stopping because of errors." -Exception $([System.Exception]::new($($messageString -replace '<[^>]+>', ''))) -ErrorRecord $_
             return
+        }
+        
+        if ($ThrottleSeed) {
+            Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
         }
 
         Invoke-TimeSignal -End

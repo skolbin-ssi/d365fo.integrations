@@ -13,9 +13,9 @@ Remove a Data Entity from Dynamics 365 Finance & Operations
 ## SYNTAX
 
 ```
-Remove-D365ODataEntity [-EntityName] <String> [-Key] <String> [-CrossCompany] [[-Tenant] <String>]
- [[-URL] <String>] [[-SystemUrl] <String>] [[-ClientId] <String>] [[-ClientSecret] <String>]
- [[-Token] <String>] [-EnableException] [<CommonParameters>]
+Remove-D365ODataEntity [-EntityName] <String> [-Key] <String> [-CrossCompany] [[-RetryTimeout] <TimeSpan>]
+ [[-ThrottleSeed] <Int32>] [[-Tenant] <String>] [[-Url] <String>] [[-SystemUrl] <String>]
+ [[-ClientId] <String>] [[-ClientSecret] <String>] [[-Token] <String>] [-EnableException] [<CommonParameters>]
 ```
 
 ## DESCRIPTION
@@ -45,6 +45,30 @@ This will remove a Data Entity from the D365FO environment through OData.
 It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
 It will use the ExchangeRate entity, and its EntitySetName / CollectionName "ExchangeRates".
 It will use the "RateTypeName='TEST',FromCurrency='DKK',ToCurrency='EUR',StartDate=2019-01-13T12:00:00Z" as the unique key for the entity.
+
+It will use the default OData configuration details that are stored in the configuration store.
+
+### EXAMPLE 3
+```
+Remove-D365ODataEntity -EntityName ExchangeRates -Key "RateTypeName='TEST',FromCurrency='DKK',ToCurrency='EUR',StartDate=2019-01-13T12:00:00Z" -RetryTimeout "00:01:00"
+```
+
+This will remove a Data Entity from the D365FO environment through OData, and try for 1 minute to handle 429.
+It will use the ExchangeRate entity, and its EntitySetName / CollectionName "ExchangeRates".
+It will use the "RateTypeName='TEST',FromCurrency='DKK',ToCurrency='EUR',StartDate=2019-01-13T12:00:00Z" as the unique key for the entity.
+It will only try to handle 429 retries for 1 minute, before failing.
+
+It will use the default OData configuration details that are stored in the configuration store.
+
+### EXAMPLE 4
+```
+Remove-D365ODataEntity -EntityName ExchangeRates -Key "RateTypeName='TEST',FromCurrency='DKK',ToCurrency='EUR',StartDate=2019-01-13T12:00:00Z" -ThrottleSeed 2
+```
+
+This will remove a Data Entity from the D365FO environment through OData, and sleep/pause between 1 and 2 seconds.
+It will use the ExchangeRate entity, and its EntitySetName / CollectionName "ExchangeRates".
+It will use the "RateTypeName='TEST',FromCurrency='DKK',ToCurrency='EUR',StartDate=2019-01-13T12:00:00Z" as the unique key for the entity.
+It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
 
 It will use the default OData configuration details that are stored in the configuration store.
 
@@ -106,22 +130,70 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
+### -RetryTimeout
+The retry timeout, before the cmdlet should quit retrying based on the 429 status code
+
+Needs to be provided in the timspan notation:
+"hh:mm:ss"
+
+hh is the number of hours, numerical notation only
+mm is the number of minutes
+ss is the numbers of seconds
+
+Each section of the timeout has to valid, e.g.
+hh can maximum be 23
+mm can maximum be 59
+ss can maximum be 59
+
+Not setting this parameter will result in the cmdlet to try for ever to handle the 429 push back from the endpoint
+
+```yaml
+Type: TimeSpan
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 3
+Default value: 00:00:00
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -ThrottleSeed
+Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+
+This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+
+It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+
+```yaml
+Type: Int32
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: 4
+Default value: 0
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
 ### -Tenant
 Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
 
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: $AADGuid
+Aliases: $AadGuid
 
 Required: False
-Position: 3
+Position: 5
 Default value: $Script:ODataTenant
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -URL
+### -Url
 URL / URI for the D365FO environment you want to access through OData
 
 If you are working against a D365FO instance, it will be the URL / URI for the instance itself
@@ -131,10 +203,10 @@ If you are working against a D365 Talent / HR instance, this will have to be "ht
 ```yaml
 Type: String
 Parameter Sets: (All)
-Aliases: URI
+Aliases: Uri
 
 Required: False
-Position: 4
+Position: 6
 Default value: $Script:ODataUrl
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -153,7 +225,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: False
-Position: 5
+Position: 7
 Default value: $Script:ODataSystemUrl
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -168,7 +240,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: False
-Position: 6
+Position: 8
 Default value: $Script:ODataClientId
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -183,7 +255,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: False
-Position: 7
+Position: 9
 Default value: $Script:ODataClientSecret
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -200,7 +272,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: False
-Position: 8
+Position: 10
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False

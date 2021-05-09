@@ -27,6 +27,13 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will work across all companies
         
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
@@ -83,6 +90,21 @@
         The EntityName used for the import is ExchangeRates.
         The Payload is an array containing valid json strings, each containing all the needed properties.
         
+    .EXAMPLE
+        PS C:\> Import-D365ODataEntityBatchMode -EntityName "ExchangeRates" -Payload '{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}','{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-04T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}'
+        
+        This will import a set of Data Entities into Dynamics 365 Finance & Operations using the OData endpoint.
+        The EntityName used for the import is ExchangeRates.
+        The Payload is an array containing valid json strings, each containing all the needed properties.
+        
+    .EXAMPLE
+        PS C:\> Import-D365ODataEntityBatchMode -EntityName "ExchangeRates" -Payload '{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}','{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-04T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}' -ThrottleSeed 2
+        
+        This will import a set of Data Entities into Dynamics 365 Finance & Operations using the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        The EntityName used for the import is ExchangeRates.
+        The Payload is an array containing valid json strings, each containing all the needed properties.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
     .NOTES
         Tags: OData, Data, Entity, Import, Upload
         
@@ -101,6 +123,8 @@ function Import-D365ODataEntityBatchMode {
         [string[]] $Payload,
 
         [switch] $CrossCompany,
+
+        [int] $ThrottleSeed,
 
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
@@ -223,8 +247,39 @@ function Import-D365ODataEntityBatchMode {
     
         try {
             Write-PSFMessage -Level Verbose -Message "Executing batch http request against the OData endpoint."
-
+           
             $response = $request.GetResponse()
+
+            $stream = $response.GetResponseStream()
+    
+            $streamReader = New-Object System.IO.StreamReader($stream)
+            
+            $res = $streamReader.ReadToEnd()
+            $streamReader.Close();
+
+            $regex = [regex] "Content-ID: (?<ContentId>[0-9]*)(?:\r\n)*HTTP/(?:1\.1|2\.0) (?<StatusCode>[0-9]*) .*"
+            $matchStatus = $regex.Matches($res)
+
+            if (($matchStatus.groups | Where-Object Name -eq "StatusCode").Value -contains "429") {
+                $regex = [regex] "Retry-After: (?<RetryValue>[0-9]*)"
+                $matchRetry = $regex.Matches($res).groups
+
+                $maxRetryValue = ($matchRetry.groups | Where-Object Name -eq "RetryValue").Value | Sort-Object -Descending | Select-Object -First 1
+
+                $matchThrottled = $matchStatus | Where-Object { $_.Groups.Name -eq "StatusCode" -and $_.Groups.Value -eq "429" }
+
+                foreach ($item in $matchThrottled) {
+                    [int]$index = $item.Groups | Where-Object Name -eq "ContentId" | Select-Object -ExpandProperty "Value"
+                    $messageString = "The following payload was throttled by the system. The system stated that you should retry in: <c='em'>$maxRetryValue</c>"
+                    Write-PSFMessage -Level Host -Message $messageString
+                    Write-PSFHostColor -Level Host -String $Payload[$index - 1] -DefaultColor Green
+                }
+
+                $res
+                
+                Stop-PSFFunction -Message "Stopping because of errors." -Exception $([System.Exception]::new($($messageString -replace '<[^>]+>', ''))) -ErrorRecord $_
+                return
+            }
         }
         catch {
             $messageString = "Something went wrong while importing batch data through the OData endpoint for the entity: $EntityName"
@@ -240,18 +295,15 @@ function Import-D365ODataEntityBatchMode {
             return
         }
 
-        $stream = $response.GetResponseStream()
-    
-        $streamReader = New-Object System.IO.StreamReader($stream)
-        
-        $res = $streamReader.ReadToEnd()
-        $streamReader.Close();
-
         if ($RawOutput) {
             $res
         }
         else {
             $res | ConvertTo-Json
+        }
+
+        if ($ThrottleSeed) {
+            Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
         }
 
         Invoke-TimeSignal -End

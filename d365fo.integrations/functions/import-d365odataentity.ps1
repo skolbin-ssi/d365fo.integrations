@@ -32,6 +32,30 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will work across all companies
         
+    .PARAMETER RetryTimeout
+        The retry timeout, before the cmdlet should quit retrying based on the 429 status code
+        
+        Needs to be provided in the timspan notation:
+        "hh:mm:ss"
+        
+        hh is the number of hours, numerical notation only
+        mm is the number of minutes
+        ss is the numbers of seconds
+        
+        Each section of the timeout has to valid, e.g.
+        hh can maximum be 23
+        mm can maximum be 59
+        ss can maximum be 59
+        
+        Not setting this parameter will result in the cmdlet to try for ever to handle the 429 push back from the endpoint
+        
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
@@ -89,6 +113,22 @@
         The EntityName used for the import is ExchangeRates.
         The Payload is a valid json string, containing all the needed properties.
         
+    .EXAMPLE
+        PS C:\> Import-D365ODataEntity -EntityName "ExchangeRates" -Payload '{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}' -RetryTimeout "00:01:00"
+        
+        This will import a Data Entity into Dynamics 365 Finance & Operations using the OData endpoint, and try for 1 minute to handle 429.
+        The EntityName used for the import is ExchangeRates.
+        The Payload is a valid json string, containing all the needed properties.
+        It will only try to handle 429 retries for 1 minute, before failing.
+        
+    .EXAMPLE
+        PS C:\> Import-D365ODataEntity -EntityName "ExchangeRates" -Payload '{"@odata.type" :"Microsoft.Dynamics.DataEntities.ExchangeRate", "RateTypeName": "TEST", "FromCurrency": "DKK", "ToCurrency": "EUR", "StartDate": "2019-01-03T00:00:00Z", "Rate": 745.10, "ConversionFactor": "Hundred", "RateTypeDescription": "TEST"}' -ThrottleSeed 2
+        
+        This will import a Data Entity into Dynamics 365 Finance & Operations using the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        The EntityName used for the import is ExchangeRates.
+        The Payload is a valid json string, containing all the needed properties.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
     .NOTES
         Tags: OData, Data, Entity, Import, Upload
         
@@ -109,6 +149,10 @@ function Import-D365ODataEntity {
         [string] $PayloadCharset = "UTF-8",
 
         [switch] $CrossCompany,
+
+        [Timespan] $RetryTimeout = "00:00:00",
+        
+        [int] $ThrottleSeed,
 
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
@@ -199,7 +243,10 @@ function Import-D365ODataEntity {
 
         try {
             Write-PSFMessage -Level Verbose -Message "Executing http request against the OData endpoint." -Target $($odataEndpoint.Uri.AbsoluteUri)
-            Invoke-RestMethod -Method POST -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType "application/json;charset=$PayloadCharset" -Body $Payload
+            Invoke-RequestHandler -Method POST -Uri $odataEndpoint.Uri.AbsoluteUri -Headers $headers -ContentType "application/json;charset=$PayloadCharset" -Payload $Payload -RetryTimeout $RetryTimeout
+        
+            if (Test-PSFFunctionInterrupt) { return }
+
         }
         catch {
             $messageString = "Something went wrong while importing data through the OData endpoint for the entity: $EntityName"
@@ -208,6 +255,10 @@ function Import-D365ODataEntity {
             return
         }
 
+        if ($ThrottleSeed) {
+            Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
+        }
+        
         Invoke-TimeSignal -End
     }
 }

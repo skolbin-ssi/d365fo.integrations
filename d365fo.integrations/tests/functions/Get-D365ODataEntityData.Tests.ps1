@@ -127,6 +127,19 @@
 			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipelineByPropertyName | Should -Be $False
 			$parameter.ParameterSets['__AllParameterSets'].ValueFromRemainingArguments | Should -Be $False
 		}
+		It 'Should have the expected parameter RetryTimeout' {
+			$parameter = (Get-Command Get-D365ODataEntityData).Parameters['RetryTimeout']
+			$parameter.Name | Should -Be 'RetryTimeout'
+			$parameter.ParameterType.ToString() | Should -Be System.TimeSpan
+			$parameter.IsDynamic | Should -Be $False
+			$parameter.ParameterSets.Keys | Should -Be '__AllParameterSets'
+			$parameter.ParameterSets.Keys | Should -Contain '__AllParameterSets'
+			$parameter.ParameterSets['__AllParameterSets'].IsMandatory | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].Position | Should -Be -2147483648
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipeline | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromPipelineByPropertyName | Should -Be $False
+			$parameter.ParameterSets['__AllParameterSets'].ValueFromRemainingArguments | Should -Be $False
+		}
 		It 'Should have the expected parameter Tenant' {
 			$parameter = (Get-Command Get-D365ODataEntityData).Parameters['Tenant']
 			$parameter.Name | Should -Be 'Tenant'
@@ -205,6 +218,19 @@
 			$parameter.ParameterSets['NextLink'].ValueFromPipelineByPropertyName | Should -Be $False
 			$parameter.ParameterSets['NextLink'].ValueFromRemainingArguments | Should -Be $False
 		}
+		It 'Should have the expected parameter ThrottleSeed' {
+			$parameter = (Get-Command Get-D365ODataEntityData).Parameters['ThrottleSeed']
+			$parameter.Name | Should -Be 'ThrottleSeed'
+			$parameter.ParameterType.ToString() | Should -Be System.Int32
+			$parameter.IsDynamic | Should -Be $False
+			$parameter.ParameterSets.Keys | Should -Be 'NextLink'
+			$parameter.ParameterSets.Keys | Should -Contain 'NextLink'
+			$parameter.ParameterSets['NextLink'].IsMandatory | Should -Be $False
+			$parameter.ParameterSets['NextLink'].Position | Should -Be -2147483648
+			$parameter.ParameterSets['NextLink'].ValueFromPipeline | Should -Be $False
+			$parameter.ParameterSets['NextLink'].ValueFromPipelineByPropertyName | Should -Be $False
+			$parameter.ParameterSets['NextLink'].ValueFromRemainingArguments | Should -Be $False
+		}
 		It 'Should have the expected parameter Token' {
 			$parameter = (Get-Command Get-D365ODataEntityData).Parameters['Token']
 			$parameter.Name | Should -Be 'Token'
@@ -268,19 +294,19 @@
 	Describe "Testing parameterset Default" {
 		<#
 		Default -EntitySetName
-		Default -EntitySetName -Top -Filter -Select -Expand -ODataQuery -CrossCompany -Tenant -Url -SystemUrl -ClientId -ClientSecret -Token -EnableException -RawOutput -OutputAsJson
+		Default -EntitySetName -Top -Filter -Select -Expand -ODataQuery -CrossCompany -RetryTimeout -Tenant -Url -SystemUrl -ClientId -ClientSecret -Token -EnableException -RawOutput -OutputAsJson
 		#>
 	}
  	Describe "Testing parameterset NextLink" {
 		<#
 		NextLink -TraverseNextLink
-		NextLink -EntityName -EntitySetName -Top -Filter -Select -Expand -ODataQuery -CrossCompany -Tenant -Url -SystemUrl -ClientId -ClientSecret -TraverseNextLink -Token -EnableException -OutputAsJson
+		NextLink -EntityName -EntitySetName -Top -Filter -Select -Expand -ODataQuery -CrossCompany -RetryTimeout -Tenant -Url -SystemUrl -ClientId -ClientSecret -TraverseNextLink -ThrottleSeed -Token -EnableException -OutputAsJson
 		#>
 	}
  	Describe "Testing parameterset Specific" {
 		<#
 		Specific -EntityName
-		Specific -EntityName -Top -Filter -Select -Expand -ODataQuery -CrossCompany -Tenant -Url -SystemUrl -ClientId -ClientSecret -Token -EnableException -RawOutput -OutputAsJson
+		Specific -EntityName -Top -Filter -Select -Expand -ODataQuery -CrossCompany -RetryTimeout -Tenant -Url -SystemUrl -ClientId -ClientSecret -Token -EnableException -RawOutput -OutputAsJson
 		#>
 	}
 

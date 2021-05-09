@@ -60,6 +60,23 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will search across all companies
         
+    .PARAMETER RetryTimeout
+        The retry timeout, before the cmdlet should quit retrying based on the 429 status code
+        
+        Needs to be provided in the timspan notation:
+        "hh:mm:ss"
+        
+        hh is the number of hours, numerical notation only
+        mm is the number of minutes
+        ss is the numbers of seconds
+        
+        Each section of the timeout has to valid, e.g.
+        hh can maximum be 23
+        mm can maximum be 59
+        ss can maximum be 59
+        
+        Not setting this parameter will result in the cmdlet to try for ever to handle the 429 push back from the endpoint
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
@@ -87,6 +104,13 @@
         Instruct the cmdlet to keep traversing the NextLink if the result set from the OData endpoint is larger than what one round trip can handle
         
         The system default is 10,000 (10 thousands) at the time of writing this feature in December 2020
+        
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It will only be available in combination with the TraverseNextLink parameter
         
     .PARAMETER Token
         Pass a bearer token string that you want to use for while working against the endpoint
@@ -145,6 +169,16 @@
         It will use the default OData configuration details that are stored in the configuration store.
         
     .EXAMPLE
+        PS C:\> Get-D365ODataEntityData -EntityName CustomersV3 -TraverseNextLink -ThrottleSeed 2
+        
+        This will get Customers from the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will traverse all NextLink that will occur while fetching data from the OData endpoint.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
+    .EXAMPLE
         PS C:\> $token = Get-D365ODataToken
         PS C:\> Get-D365ODataEntityData -EntityName CustomersV3 -ODataQuery '$top=1' -Token $token
         
@@ -152,6 +186,16 @@
         It will get a fresh token, saved it into the token variable and pass it to the cmdlet.
         It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
         It will get the top 1 results from the list of customers.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
+    .EXAMPLE
+        PS C:\> Get-D365ODataEntityData -EntityName CustomersV3 -ODataQuery '$top=1' -RetryTimeout "00:01:00"
+        
+        This will get Customers from the OData endpoint, and try for 1 minute to handle 429.
+        It will use the CustomerV3 entity, and its EntitySetName / CollectionName "CustomersV3".
+        It will get the top 1 results from the list of customers.
+        It will only try to handle 429 retries for 1 minute, before failing.
         
         It will use the default OData configuration details that are stored in the configuration store.
         
@@ -207,6 +251,8 @@ function Get-D365ODataEntityData {
 
         [switch] $CrossCompany,
 
+        [Timespan] $RetryTimeout = "00:00:00",
+
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
 
@@ -221,6 +267,9 @@ function Get-D365ODataEntityData {
 
         [Parameter(Mandatory = $true, ParameterSetName = "NextLink")]
         [switch] $TraverseNextLink,
+
+        [Parameter(ParameterSetName = "NextLink")]
+        [int] $ThrottleSeed,
 
         [string] $Token,
         
@@ -347,8 +396,10 @@ function Get-D365ODataEntityData {
             $localUri = $odataEndpoint.Uri.AbsoluteUri
             do {
                 Write-PSFMessage -Level Verbose -Message "Executing http request against the OData endpoint." -Target $localUri
-                $resGet = Invoke-RestMethod -Method Get -Uri $localUri -Headers $headers -ContentType 'application/json'
-
+                $resGet = Invoke-RequestHandler -Method Get -Uri $localUri -Headers $headers -ContentType 'application/json' -RetryTimeout $RetryTimeout
+                
+                if (Test-PSFFunctionInterrupt) { return }
+                
                 if (-not $RawOutput) {
                     $resArray.AddRange($resGet.Value)
                 }
@@ -358,6 +409,10 @@ function Get-D365ODataEntityData {
                 
                 if ($($resGet.'@odata.nextLink') -match ".*(/data/.*)") {
                     $localUri = "$SystemUrl$($Matches[1])"
+                }
+
+                if ($ThrottleSeed) {
+                    Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
                 }
             } while ($TraverseNextLink -and $resGet.'@odata.nextLink')
 

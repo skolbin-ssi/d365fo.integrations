@@ -31,6 +31,13 @@
     .PARAMETER CrossCompany
         Instruct the cmdlet / function to ensure the request against the OData endpoint will work across all companies
         
+    .PARAMETER ThrottleSeed
+        Instruct the cmdlet to invoke a thread sleep between 1 and ThrottleSeed value
+        
+        This is to help to mitigate the 429 retry throttling on the OData / Custom Service endpoints
+        
+        It makes most sense if you are running things a outer loop, where you will hit the OData / Custom Service endpoints with a burst of calls in a short time
+        
     .PARAMETER Tenant
         Azure Active Directory (AAD) tenant id (Guid) that the D365FO environment is connected to, that you want to access through OData
         
@@ -82,6 +89,16 @@
         
         It will use the default OData configuration details that are stored in the configuration store.
         
+    .EXAMPLE
+        PS C:\> Remove-D365ODataEntityBatchMode -EntityName "CustomersV3" -Key "dataAreaId='USMF',CustomerAccount='Customer1'","dataAreaId='USMF',CustomerAccount='Customer2'" -ThrottleSeed 2
+        
+        This will delete both customers, in a single request, from the Dynamics 365 Finance & Operations using the OData endpoint, and sleep/pause between 1 and 2 seconds.
+        The EntityName used for the deletion is CustomersV3.
+        The Key is an array containing valid keys, each containing referencing a single entity.
+        It will use the ThrottleSeed 2 to sleep/pause the execution, to mitigate the 429 pushback from the endpoint.
+        
+        It will use the default OData configuration details that are stored in the configuration store.
+        
     .NOTES
         Tags: OData, Data, Entity, Delete, Remove, Batch
         
@@ -100,6 +117,8 @@ function Remove-D365ODataEntityBatchMode {
         [string[]] $Key,
 
         [switch] $CrossCompany,
+
+        [int] $ThrottleSeed,
 
         [Alias('$AadGuid')]
         [string] $Tenant = $Script:ODataTenant,
@@ -249,6 +268,10 @@ function Remove-D365ODataEntityBatchMode {
         }
         else {
             $res | ConvertTo-Json
+        }
+
+        if ($ThrottleSeed) {
+            Start-Sleep -Seconds $(Get-Random -Minimum 1 -Maximum $ThrottleSeed)
         }
 
         Invoke-TimeSignal -End
